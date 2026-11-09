@@ -1,14 +1,12 @@
-// ==========================================================================
-// NASA APOD Space Explorer - Script (New WordPress API Endpoint)
-// ==========================================================================
 
-const API_KEY = 'htJJPFfhqqpgW7hk7zRqmLRR7BkK8QccN9KJ8Gwt'; 
 
-// Primary (New WordPress REST API) and Fallback (Legacy) endpoints
-const NEW_APOD_ENDPOINT = 'https://science.nasa.gov/wp-json/wp/v2/apod-basic';
-const LEGACY_APOD_ENDPOINT = 'https://api.nasa.gov/planetary/apod';
+const PRIMARY_KEY = 'htJJPFfhqqpgW7hk7zRqmLRR7BkK8QccN9KJ8Gwt';
+const FALLBACK_KEY = 'DEMO_KEY';
+const APOD_ENDPOINT = 'https://api.nasa.gov/planetary/apod';
+const DEFAULT_FALLBACK_IMG = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop';
 
-// Cosmic facts for "Did You Know?" banner
+let isFetching = false;
+
 const SPACE_FACTS = [
   "A day on Venus is longer than a year on Venus—it takes 243 Earth days to rotate once!",
   "Neutron stars can spin up to 600 times per second.",
@@ -18,14 +16,12 @@ const SPACE_FACTS = [
   "Sunset on Mars appears blue due to how dust particles scatter light in its thin atmosphere."
 ];
 
-// DOM Elements
 const startDateInput = document.getElementById('startDate');
 const endDateInput = document.getElementById('endDate');
 const getImagesBtn = document.getElementById('getImagesBtn');
 const galleryContainer = document.getElementById('gallery');
 const factText = document.getElementById('factText');
 
-// Modal Elements
 const mediaModal = document.getElementById('mediaModal');
 const modalOverlay = document.getElementById('modalOverlay');
 const modalCloseBtn = document.getElementById('modalClose');
@@ -34,20 +30,27 @@ const modalTitle = document.getElementById('modalTitle');
 const modalDate = document.getElementById('modalDate');
 const modalExplanation = document.getElementById('modalExplanation');
 
-// Initialize App
 document.addEventListener('DOMContentLoaded', () => {
   displayRandomFact();
+  setDefaultDates();
 
-  // Initialize date range defaults via dateRange.js helper if present
-  if (typeof setupDateInputs === 'function' && startDateInput && endDateInput) {
-    setupDateInputs(startDateInput, endDateInput);
+  if (endDateInput && startDateInput) {
+    endDateInput.addEventListener('change', validateDateRange);
+    startDateInput.addEventListener('change', validateDateRange);
   }
 
-  // Fetch images on page load
   handleFetchImages();
 
   if (getImagesBtn) {
     getImagesBtn.addEventListener('click', handleFetchImages);
+  }
+
+  const form = getImagesBtn ? getImagesBtn.closest('form') : null;
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleFetchImages(e);
+    });
   }
 
   if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
@@ -58,8 +61,49 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * Displays a random space fact
+ * Sets initial dates safely capped at today (no future dates)
  */
+function setDefaultDates() {
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(today.getDate() - 6);
+  const startStr = sevenDaysAgo.toISOString().split('T')[0];
+
+  if (startDateInput) {
+    startDateInput.value = startStr;
+    startDateInput.setAttribute('max', todayStr);
+  }
+  if (endDateInput) {
+    endDateInput.value = todayStr;
+    endDateInput.setAttribute('max', todayStr);
+  }
+}
+
+/**
+ * Validates date range so it never exceeds 9 days or goes past today
+ */
+function validateDateRange() {
+  if (!startDateInput.value || !endDateInput.value) return;
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (endDateInput.value > todayStr) {
+    endDateInput.value = todayStr;
+  }
+
+  const start = new Date(startDateInput.value);
+  const end = new Date(endDateInput.value);
+  const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+  if (diffDays > 9) {
+    const maxEnd = new Date(start);
+    maxEnd.setDate(start.getDate() + 8);
+    const maxEndStr = maxEnd.toISOString().split('T')[0];
+    endDateInput.value = maxEndStr > todayStr ? todayStr : maxEndStr;
+  }
+}
+
 function displayRandomFact() {
   const randomIndex = Math.floor(Math.random() * SPACE_FACTS.length);
   if (factText) {
@@ -67,59 +111,101 @@ function displayRandomFact() {
   }
 }
 
-/**
- * Fetch trigger handler
- */
-async function handleFetchImages() {
-  const startDate = startDateInput ? startDateInput.value : '';
-  const endDate = endDateInput ? endDateInput.value : '';
+async function handleFetchImages(e) {
+  if (e && e.preventDefault) {
+    e.preventDefault();
+  }
 
-  if (!startDate || !endDate) {
+  if (isFetching) return;
+
+  validateDateRange();
+
+  const startDateStr = startDateInput ? startDateInput.value : '';
+  const endDateStr = endDateInput ? endDateInput.value : '';
+
+  if (!startDateStr || !endDateStr) {
     alert('Please select valid start and end dates.');
     return;
   }
 
+  isFetching = true;
   showLoadingState();
 
   try {
-    const apodData = await fetchApodData(startDate, endDate);
+    const apodData = await fetchApodData(startDateStr, endDateStr);
     renderGallery(apodData);
   } catch (error) {
     renderErrorState(error.message);
+  } finally {
+    isFetching = false;
   }
 }
 
-/**
- * Fetches data from NASA's new WordPress APOD endpoint with legacy fallback
- */
 async function fetchApodData(startDate, endDate) {
-  const queryParams = `?api_key=${API_KEY}&start_date=${startDate}&end_date=${endDate}`;
+  let url = `${APOD_ENDPOINT}?api_key=${PRIMARY_KEY}&start_date=${startDate}&end_date=${endDate}`;
   
-  try {
-    // Attempt request to new WordPress endpoint
-    const response = await fetch(`${NEW_APOD_ENDPOINT}${queryParams}`);
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch (err) {
-    console.warn('Primary WordPress APOD API request failed, trying legacy endpoint...', err);
+  let response = await fetch(url);
+  
+  if (!response.ok) {
+    url = `${APOD_ENDPOINT}?api_key=${FALLBACK_KEY}&start_date=${startDate}&end_date=${endDate}`;
+    response = await fetch(url);
   }
 
-  // Fallback request to legacy endpoint
-  const legacyResponse = await fetch(`${LEGACY_APOD_ENDPOINT}${queryParams}`);
-  if (!legacyResponse.ok) {
-    if (legacyResponse.status === 429) {
-      throw new Error('NASA API Rate limit reached. Please wait a moment before trying again.');
-    }
-    throw new Error(`Failed to load APOD data (HTTP ${legacyResponse.status})`);
+  if (!response.ok) {
+    throw new Error(`NASA API returned HTTP ${response.status}`);
   }
 
-  return await legacyResponse.json();
+  return await response.json();
 }
 
-/**
- * Displays loading indicator
- */
+function getItemTitle(item) {
+  if (!item) return 'NASA Astronomy Picture';
+  if (typeof item.title === 'string' && item.title.trim() !== '' && item.title !== 'NASA Science') {
+    return item.title;
+  }
+  if (item.title && typeof item.title === 'object' && item.title.rendered) {
+    return item.title.rendered;
+  }
+  return 'NASA Astronomy Picture';
+}
+
+function getItemImageUrl(item) {
+  if (!item) return DEFAULT_FALLBACK_IMG;
+
+  if (item.media_type === 'video') {
+    const ytId = getYouTubeId(item.url);
+    return ytId 
+      ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
+      : DEFAULT_FALLBACK_IMG;
+  }
+
+  let rawUrl = item.hdurl || item.url || '';
+
+  if (typeof item.url === 'string' && (item.url.includes('image-article') || !item.url.match(/\.(jpg|jpeg|png|gif|webp)$/i)) && item.hdurl) {
+    rawUrl = item.hdurl;
+  }
+
+  if (!rawUrl) return DEFAULT_FALLBACK_IMG;
+
+  return rawUrl.replace(/^http:\/\//i, 'https://');
+}
+
+function handleImageError(imgElement, originalSrc) {
+  if (imgElement.dataset.failed === '2') {
+    imgElement.src = DEFAULT_FALLBACK_IMG;
+    return;
+  }
+
+  if (!imgElement.dataset.failed) {
+    imgElement.dataset.failed = '1';
+    const cleanUrl = originalSrc.replace(/^https?:\/\//i, '');
+    imgElement.src = `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}`;
+  } else {
+    imgElement.dataset.failed = '2';
+    imgElement.src = DEFAULT_FALLBACK_IMG;
+  }
+}
+
 function showLoadingState() {
   if (!galleryContainer) return;
   galleryContainer.innerHTML = `
@@ -130,9 +216,6 @@ function showLoadingState() {
   `;
 }
 
-/**
- * Renders gallery item cards for each APOD entry
- */
 function renderGallery(items) {
   if (!galleryContainer) return;
   galleryContainer.innerHTML = '';
@@ -151,25 +234,22 @@ function renderGallery(items) {
     card.className = 'gallery-item';
 
     const isVideo = item.media_type === 'video';
-    
-    // Support both new WordPress response structure (hdurl asset link) and legacy structure
-    let mediaThumbnail = '';
-    if (isVideo) {
-      const ytId = getYouTubeId(item.url);
-      mediaThumbnail = ytId 
-        ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-        : 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop';
-    } else {
-      mediaThumbnail = item.hdurl || item.url;
-    }
+    const mediaThumbnail = getItemImageUrl(item);
+    const itemTitle = getItemTitle(item);
 
     card.innerHTML = `
       <div class="gallery-item-image-wrapper">
         ${isVideo ? '<span class="video-badge">▶ VIDEO</span>' : ''}
-        <img src="${mediaThumbnail}" alt="${item.alt || item.title}" loading="lazy" />
+        <img 
+          src="${mediaThumbnail}" 
+          alt="${itemTitle}" 
+          loading="lazy" 
+          referrerpolicy="no-referrer"
+          onerror="handleImageError(this, '${mediaThumbnail}')"
+        />
       </div>
       <div class="gallery-item-info">
-        <h3 class="gallery-item-title">${item.title}</h3>
+        <h3 class="gallery-item-title">${itemTitle}</h3>
         <span class="gallery-item-date">🗓️ ${item.date}</span>
       </div>
     `;
@@ -179,9 +259,6 @@ function renderGallery(items) {
   });
 }
 
-/**
- * Renders error message in gallery view
- */
 function renderErrorState(errorMessage) {
   if (!galleryContainer) return;
   galleryContainer.innerHTML = `
@@ -193,13 +270,11 @@ function renderErrorState(errorMessage) {
   `;
 }
 
-/**
- * Opens detailed view modal
- */
 function openModal(item) {
   if (!mediaModal) return;
 
-  modalTitle.textContent = item.title;
+  const itemTitle = getItemTitle(item);
+  modalTitle.textContent = itemTitle;
   modalDate.textContent = `Date: ${item.date}${item.copyright ? ` | © ${item.copyright}` : ''}`;
   modalExplanation.textContent = item.explanation || 'No explanation available for this APOD item.';
 
@@ -207,14 +282,19 @@ function openModal(item) {
     modalMedia.innerHTML = `
       <iframe 
         src="${item.url}" 
-        title="${item.title}" 
+        title="${itemTitle}" 
         allowfullscreen>
       </iframe>
     `;
   } else {
-    const imageUrl = item.hdurl || item.url;
+    const imageUrl = getItemImageUrl(item);
     modalMedia.innerHTML = `
-      <img src="${imageUrl}" alt="${item.alt || item.title}" />
+      <img 
+        src="${imageUrl}" 
+        alt="${itemTitle}" 
+        referrerpolicy="no-referrer"
+        onerror="handleImageError(this, '${imageUrl}')"
+      />
     `;
   }
 
@@ -223,9 +303,6 @@ function openModal(item) {
   document.body.style.overflow = 'hidden';
 }
 
-/**
- * Closes modal
- */
 function closeModal() {
   if (!mediaModal) return;
   mediaModal.classList.add('hidden');
@@ -234,9 +311,6 @@ function closeModal() {
   document.body.style.overflow = '';
 }
 
-/**
- * Extracts YouTube Video ID
- */
 function getYouTubeId(url) {
   if (!url) return '';
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
