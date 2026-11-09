@@ -1,21 +1,19 @@
 
-
-const PRIMARY_KEY = 'htJJPFfhqqpgW7hk7zRqmLRR7BkK8QccN9KJ8Gwt';
-const FALLBACK_KEY = 'DEMO_KEY';
-const APOD_ENDPOINT = 'https://api.nasa.gov/planetary/apod';
-const DEFAULT_FALLBACK_IMG = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop';
+const NASA_API_KEY = 'htJJPFfhqqpgW7hk7zRqmLRR7BkK8QccN9KJ8Gwt'; // Replace locally with your newly generated key
+const APOD_ENDPOINT = 'https://science.nasa.gov/wp-json/wp/v2/apod-basic';
 
 let isFetching = false;
 
 const SPACE_FACTS = [
-  "A day on Venus is longer than a year on Venus—it takes 243 Earth days to rotate once!",
-  "Neutron stars can spin up to 600 times per second.",
-  "One million Earths could fit inside the Sun.",
-  "There are more trees on Earth than stars in the Milky Way galaxy.",
-  "Footprints left on the Moon by Apollo astronauts will stay there for millions of years.",
-  "Sunset on Mars appears blue due to how dust particles scatter light in its thin atmosphere."
+    "A day on Venus is longer than a year on Venus—it takes 243 Earth days to rotate once!",
+    "Neutron stars can spin up to 600 times per second.",
+    "One million Earths could fit inside the Sun.",
+    "There are more trees on Earth than stars in the Milky Way galaxy.",
+    "Footprints left on the Moon by Apollo astronauts will stay there for millions of years.",
+    "Sunset on Mars appears blue due to how dust particles scatter light in its thin atmosphere."
 ];
 
+// HTML ELEMENTS
 const startDateInput = document.getElementById('startDate');
 const endDateInput = document.getElementById('endDate');
 const getImagesBtn = document.getElementById('getImagesBtn');
@@ -30,289 +28,347 @@ const modalTitle = document.getElementById('modalTitle');
 const modalDate = document.getElementById('modalDate');
 const modalExplanation = document.getElementById('modalExplanation');
 
+// INITIALIZATION
 document.addEventListener('DOMContentLoaded', () => {
-  displayRandomFact();
-  setDefaultDates();
+    displayRandomFact();
+    setDefaultDates();
 
-  if (endDateInput && startDateInput) {
-    endDateInput.addEventListener('change', validateDateRange);
     startDateInput.addEventListener('change', validateDateRange);
-  }
+    endDateInput.addEventListener('change', validateDateRange);
 
-  handleFetchImages();
-
-  if (getImagesBtn) {
     getImagesBtn.addEventListener('click', handleFetchImages);
-  }
 
-  const form = getImagesBtn ? getImagesBtn.closest('form') : null;
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      handleFetchImages(e);
+    modalCloseBtn.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', closeModal);
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeModal();
     });
-  }
 
-  if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeModal);
-  if (modalOverlay) modalOverlay.addEventListener('click', closeModal);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
-  });
+    handleFetchImages();
 });
 
-/**
- * Sets initial dates safely capped at today (no future dates)
- */
+// DATE HELPERS
+function getLocalDateString(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+}
+
 function setDefaultDates() {
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+    const today = new Date();
+    const todayString = getLocalDateString(today);
 
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(today.getDate() - 6);
-  const startStr = sevenDaysAgo.toISOString().split('T')[0];
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(today.getDate() - 5);
 
-  if (startDateInput) {
-    startDateInput.value = startStr;
-    startDateInput.setAttribute('max', todayStr);
-  }
-  if (endDateInput) {
-    endDateInput.value = todayStr;
-    endDateInput.setAttribute('max', todayStr);
-  }
+    startDateInput.value = getLocalDateString(fiveDaysAgo);
+    endDateInput.value = todayString;
+
+    startDateInput.max = todayString;
+    endDateInput.max = todayString;
 }
 
-/**
- * Validates date range so it never exceeds 9 days or goes past today
- */
+// DATE VALIDATION
 function validateDateRange() {
-  if (!startDateInput.value || !endDateInput.value) return;
+    const todayString = getLocalDateString(new Date());
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  if (endDateInput.value > todayStr) {
-    endDateInput.value = todayStr;
-  }
+    startDateInput.max = todayString;
+    endDateInput.max = todayString;
 
-  const start = new Date(startDateInput.value);
-  const end = new Date(endDateInput.value);
-  const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    if (!startDateInput.value || !endDateInput.value) {
+        return false;
+    }
 
-  if (diffDays > 9) {
-    const maxEnd = new Date(start);
-    maxEnd.setDate(start.getDate() + 8);
-    const maxEndStr = maxEnd.toISOString().split('T')[0];
-    endDateInput.value = maxEndStr > todayStr ? todayStr : maxEndStr;
-  }
+    if (startDateInput.value > endDateInput.value) {
+        alert('Start date cannot be after the end date.');
+        return false;
+    }
+
+    if (startDateInput.value < '1995-06-16') {
+        alert('NASA APOD dates must be June 16, 1995 or later.');
+        return false;
+    }
+
+    if (endDateInput.value > todayString) {
+        alert('Please select a date that is not in the future.');
+        return false;
+    }
+
+    const start = new Date(startDateInput.value + 'T00:00:00');
+    const end = new Date(endDateInput.value + 'T00:00:00');
+
+    const difference =
+        Math.round((end - start) / 86400000) + 1;
+
+    if (difference > 9) {
+        const maxEnd = new Date(start);
+        maxEnd.setDate(start.getDate() + 8);
+
+        endDateInput.value = getLocalDateString(maxEnd);
+
+        alert('Please select a date range of 9 days or fewer.');
+        return false;
+    }
+
+    return true;
 }
 
+// RANDOM SPACE FACT
 function displayRandomFact() {
-  const randomIndex = Math.floor(Math.random() * SPACE_FACTS.length);
-  if (factText) {
+    const randomIndex = Math.floor(Math.random() * SPACE_FACTS.length);
+
     factText.textContent = SPACE_FACTS[randomIndex];
-  }
 }
 
-async function handleFetchImages(e) {
-  if (e && e.preventDefault) {
-    e.preventDefault();
-  }
+// FETCH NASA DATA
+async function handleFetchImages(event) {
+    if (event) event.preventDefault();
 
-  if (isFetching) return;
+    if (isFetching) return;
+    if (!validateDateRange()) return;
 
-  validateDateRange();
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
 
-  const startDateStr = startDateInput ? startDateInput.value : '';
-  const endDateStr = endDateInput ? endDateInput.value : '';
+    isFetching = true;
+    getImagesBtn.disabled = true;
 
-  if (!startDateStr || !endDateStr) {
-    alert('Please select valid start and end dates.');
-    return;
-  }
+    showLoadingState();
 
-  isFetching = true;
-  showLoadingState();
+    try {
+        const apodData = await fetchApodData(startDate, endDate);
 
-  try {
-    const apodData = await fetchApodData(startDateStr, endDateStr);
-    renderGallery(apodData);
-  } catch (error) {
-    renderErrorState(error.message);
-  } finally {
-    isFetching = false;
-  }
+        console.log('NASA APOD DATA:', apodData);
+
+        renderGallery(apodData);
+
+    } catch (error) {
+        console.error('NASA APOD ERROR:', error);
+        renderErrorState(error.message);
+
+    } finally {
+        isFetching = false;
+        getImagesBtn.disabled = false;
+    }
 }
 
+// NASA API REQUEST
 async function fetchApodData(startDate, endDate) {
-  let url = `${APOD_ENDPOINT}?api_key=${PRIMARY_KEY}&start_date=${startDate}&end_date=${endDate}`;
-  
-  let response = await fetch(url);
-  
-  if (!response.ok) {
-    url = `${APOD_ENDPOINT}?api_key=${FALLBACK_KEY}&start_date=${startDate}&end_date=${endDate}`;
-    response = await fetch(url);
-  }
+    const params = new URLSearchParams({
+        api_key: NASA_API_KEY,
+        start_date: startDate,
+        end_date: endDate
+    });
 
-  if (!response.ok) {
-    throw new Error(`NASA API returned HTTP ${response.status}`);
-  }
+    const requestURL = `${APOD_ENDPOINT}?${params}`;
 
-  return await response.json();
+    console.log('NASA REQUEST:', requestURL.replace(NASA_API_KEY, '[API KEY]'));
+
+    const response = await fetch(requestURL);
+
+    if (!response.ok) {
+        throw new Error(
+            `NASA API error: ${response.status}. Check your API key and try again.`
+        );
+    }
+
+    const data = await response.json();
+
+    if (!Array.isArray(data)) {
+        throw new Error('NASA returned an unexpected response.');
+    }
+
+    return data;
 }
 
+// GET TITLE
 function getItemTitle(item) {
-  if (!item) return 'NASA Astronomy Picture';
-  if (typeof item.title === 'string' && item.title.trim() !== '' && item.title !== 'NASA Science') {
-    return item.title;
-  }
-  if (item.title && typeof item.title === 'object' && item.title.rendered) {
-    return item.title.rendered;
-  }
-  return 'NASA Astronomy Picture';
+    return item.title || 'NASA Astronomy Picture';
 }
 
+// GET IMAGE URL
 function getItemImageUrl(item) {
-  if (!item) return DEFAULT_FALLBACK_IMG;
-
-  if (item.media_type === 'video') {
-    const ytId = getYouTubeId(item.url);
-    return ytId 
-      ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-      : DEFAULT_FALLBACK_IMG;
-  }
-
-  let rawUrl = item.hdurl || item.url || '';
-
-  if (typeof item.url === 'string' && (item.url.includes('image-article') || !item.url.match(/\.(jpg|jpeg|png|gif|webp)$/i)) && item.hdurl) {
-    rawUrl = item.hdurl;
-  }
-
-  if (!rawUrl) return DEFAULT_FALLBACK_IMG;
-
-  return rawUrl.replace(/^http:\/\//i, 'https://');
+    return item.hdurl || '';
 }
 
-function handleImageError(imgElement, originalSrc) {
-  if (imgElement.dataset.failed === '2') {
-    imgElement.src = DEFAULT_FALLBACK_IMG;
-    return;
-  }
+// IMAGE ERROR HANDLING
+function handleImageError(imgElement) {
+    const wrapper = imgElement.parentElement;
 
-  if (!imgElement.dataset.failed) {
-    imgElement.dataset.failed = '1';
-    const cleanUrl = originalSrc.replace(/^https?:\/\//i, '');
-    imgElement.src = `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}`;
-  } else {
-    imgElement.dataset.failed = '2';
-    imgElement.src = DEFAULT_FALLBACK_IMG;
-  }
+    imgElement.remove();
+
+    const message = document.createElement('div');
+    message.className = 'image-unavailable';
+    message.textContent = 'Image currently unavailable';
+
+    wrapper.appendChild(message);
 }
 
+// LOADING STATE
 function showLoadingState() {
-  if (!galleryContainer) return;
-  galleryContainer.innerHTML = `
-    <div class="loading-state">
-      <div class="loading-spinner">🔄</div>
-      <p>Loading space photos...</p>
-    </div>
-  `;
+    galleryContainer.innerHTML = `
+        <div class="loading-state">
+            <div class="loading-spinner">🔄</div>
+            <p>Loading NASA space images...</p>
+        </div>
+    `;
 }
 
+// RENDER GALLERY
 function renderGallery(items) {
-  if (!galleryContainer) return;
-  galleryContainer.innerHTML = '';
+    galleryContainer.innerHTML = '';
 
-  if (!Array.isArray(items) || items.length === 0) {
-    galleryContainer.innerHTML = `
-      <div class="placeholder">
-        <p>No space media found for the selected date range.</p>
-      </div>
-    `;
-    return;
-  }
+    if (!items.length) {
+        galleryContainer.innerHTML = `
+            <div class="placeholder">
+                <p>No space images found for these dates.</p>
+            </div>
+        `;
+        return;
+    }
 
-  items.forEach((item) => {
-    const card = document.createElement('div');
-    card.className = 'gallery-item';
+    items.forEach((item) => {
+        const card = document.createElement('div');
+        card.className = 'gallery-item';
 
-    const isVideo = item.media_type === 'video';
-    const mediaThumbnail = getItemImageUrl(item);
+        const isVideo = item.media_type === 'video';
+        const imageUrl = getItemImageUrl(item);
+        const itemTitle = getItemTitle(item);
+
+        // IMAGE WRAPPER
+        const imageWrapper = document.createElement('div');
+        imageWrapper.className = 'gallery-item-image-wrapper';
+
+        // VIDEO BADGE
+        if (isVideo) {
+            const badge = document.createElement('span');
+            badge.className = 'video-badge';
+            badge.textContent = '▶ VIDEO';
+            imageWrapper.appendChild(badge);
+        }
+
+        // IMAGE
+        if (!isVideo && imageUrl) {
+            const image = document.createElement('img');
+
+            image.src = imageUrl;
+            image.alt = item.alt || itemTitle;
+            image.loading = 'lazy';
+
+            image.onerror = function () {
+                handleImageError(this);
+            };
+
+            imageWrapper.appendChild(image);
+        } else {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'image-unavailable';
+            placeholder.textContent = isVideo
+                ? '▶ Watch NASA video'
+                : 'Image currently unavailable';
+
+            imageWrapper.appendChild(placeholder);
+        }
+
+        // CARD INFORMATION
+        const info = document.createElement('div');
+        info.className = 'gallery-item-info';
+
+        const title = document.createElement('h3');
+        title.className = 'gallery-item-title';
+        title.textContent = itemTitle;
+
+        const date = document.createElement('span');
+        date.className = 'gallery-item-date';
+        date.textContent = `🗓️ ${item.date || 'Date unavailable'}`;
+
+        info.appendChild(title);
+        info.appendChild(date);
+
+        card.appendChild(imageWrapper);
+        card.appendChild(info);
+
+        // OPEN MODAL
+        card.addEventListener('click', () => {
+            openModal(item);
+        });
+
+        galleryContainer.appendChild(card);
+    });
+}
+
+// ERROR STATE
+function renderErrorState(errorMessage) {
+    galleryContainer.innerHTML = '';
+
+    const errorBox = document.createElement('div');
+    errorBox.className = 'placeholder';
+
+    const heading = document.createElement('p');
+    heading.textContent = '⚠️ Unable to load NASA data';
+
+    const details = document.createElement('small');
+    details.textContent = errorMessage;
+
+    errorBox.appendChild(heading);
+    errorBox.appendChild(details);
+
+    galleryContainer.appendChild(errorBox);
+}
+
+// OPEN MODAL
+function openModal(item) {
     const itemTitle = getItemTitle(item);
 
-    card.innerHTML = `
-      <div class="gallery-item-image-wrapper">
-        ${isVideo ? '<span class="video-badge">▶ VIDEO</span>' : ''}
-        <img 
-          src="${mediaThumbnail}" 
-          alt="${itemTitle}" 
-          loading="lazy" 
-          referrerpolicy="no-referrer"
-          onerror="handleImageError(this, '${mediaThumbnail}')"
-        />
-      </div>
-      <div class="gallery-item-info">
-        <h3 class="gallery-item-title">${itemTitle}</h3>
-        <span class="gallery-item-date">🗓️ ${item.date}</span>
-      </div>
-    `;
+    modalTitle.textContent = itemTitle;
 
-    card.addEventListener('click', () => openModal(item));
-    galleryContainer.appendChild(card);
-  });
+    modalDate.textContent =
+        `Date: ${item.date || 'Unavailable'}` +
+        (item.copyright ? ` | © ${item.copyright}` : '');
+
+    modalExplanation.textContent =
+        item.explanation || 'No explanation available.';
+
+    modalMedia.innerHTML = '';
+
+    if (item.media_type === 'image' && getItemImageUrl(item)) {
+        const image = document.createElement('img');
+
+        image.src = getItemImageUrl(item);
+        image.alt = item.alt || itemTitle;
+
+        image.onerror = function () {
+            handleImageError(this);
+        };
+
+        modalMedia.appendChild(image);
+
+    } else {
+        const link = document.createElement('a');
+
+        link.href = item.permalink || item.url || '#';
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Watch or view this NASA media';
+
+        modalMedia.appendChild(link);
+    }
+
+    mediaModal.classList.remove('hidden');
+    mediaModal.setAttribute('aria-hidden', 'false');
+
+    document.body.style.overflow = 'hidden';
 }
 
-function renderErrorState(errorMessage) {
-  if (!galleryContainer) return;
-  galleryContainer.innerHTML = `
-    <div class="placeholder" style="border-color: #fc3d21;">
-      <div class="placeholder-icon">⚠️</div>
-      <p style="color: #fc3d21;">Unable to load NASA data</p>
-      <small style="color: #94a3b8; display: block; margin-top: 8px;">${errorMessage}</small>
-    </div>
-  `;
-}
-
-function openModal(item) {
-  if (!mediaModal) return;
-
-  const itemTitle = getItemTitle(item);
-  modalTitle.textContent = itemTitle;
-  modalDate.textContent = `Date: ${item.date}${item.copyright ? ` | © ${item.copyright}` : ''}`;
-  modalExplanation.textContent = item.explanation || 'No explanation available for this APOD item.';
-
-  if (item.media_type === 'video') {
-    modalMedia.innerHTML = `
-      <iframe 
-        src="${item.url}" 
-        title="${itemTitle}" 
-        allowfullscreen>
-      </iframe>
-    `;
-  } else {
-    const imageUrl = getItemImageUrl(item);
-    modalMedia.innerHTML = `
-      <img 
-        src="${imageUrl}" 
-        alt="${itemTitle}" 
-        referrerpolicy="no-referrer"
-        onerror="handleImageError(this, '${imageUrl}')"
-      />
-    `;
-  }
-
-  mediaModal.classList.remove('hidden');
-  mediaModal.setAttribute('aria-hidden', 'false');
-  document.body.style.overflow = 'hidden';
-}
-
+// CLOSE MODAL
 function closeModal() {
-  if (!mediaModal) return;
-  mediaModal.classList.add('hidden');
-  mediaModal.setAttribute('aria-hidden', 'true');
-  modalMedia.innerHTML = '';
-  document.body.style.overflow = '';
-}
+    mediaModal.classList.add('hidden');
+    mediaModal.setAttribute('aria-hidden', 'true');
 
-function getYouTubeId(url) {
-  if (!url) return '';
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-  return match ? match[1] : '';
+    modalMedia.innerHTML = '';
+
+    document.body.style.overflow = '';
 }
